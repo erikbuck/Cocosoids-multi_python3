@@ -12,8 +12,8 @@ class Game(object):
     """
     
     default_title = "Cocosoids"
-    default_window_width = 1024
-    default_window_height = 768
+    default_window_width = 1300
+    default_window_height = 700
 
     def __init__(self):
         """ """

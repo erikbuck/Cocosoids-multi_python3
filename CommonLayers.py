@@ -77,10 +77,11 @@ class PlayLayer(KeyboardInputLayer):
         self.add(self.batch)
 
         width, height = cocos.director.director.get_window_size()
-        self.add(
-            cocos.sprite.Sprite(PlayLayer.background_image_name,
-            position=(width * 0.5, height * 0.5)),
-            z=-1)
+        backgroundSprite = cocos.sprite.Sprite(PlayLayer.background_image_name,
+            position=(width * 0.5, height * 0.5))
+        backgroundSprite.scale_x = width / backgroundSprite.width
+        backgroundSprite.scale_y = height / backgroundSprite.height
+        self.add(backgroundSprite, z=-1)
 
     def updateLivesRemaining(self, number):
         """ """
