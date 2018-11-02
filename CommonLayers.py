@@ -127,9 +127,9 @@ class PlayLayer(KeyboardInputLayer):
     def fireBulletForPlayer(self, player_id):
         """ """
         if player_id in self.players:
-            # Don't shoot if not in teh game at the moment
+            # Don't shoot if not in the game at the moment
             player = self.players[player_id]
-            if not player.shouldDie:
+            if (not player.shouldDie) and (not player.is_shielded):
                 dx, dy = player.getHeadingVector()
                 x, y = player.position
                 x += dx * player.radius * 1.5 # Move bullet out of ship
@@ -436,18 +436,19 @@ class Player(GameSprite):
    
     def thrust(self):
         """ """
-        dx, dy = self.getHeadingVector()
-        vx, vy = self.motion_vector
-        vx += dx
-        vy += dy
+        if not self.is_shielded:
+           dx, dy = self.getHeadingVector()
+           vx, vy = self.motion_vector
+           vx += dx
+           vy += dy
         
-        # Limit magnitude of velocity
-        if Player.max_velocity_squared < (vx * vx + vy * vy):
-             vx *= 0.8
-             vy *= 0.8
+           # Limit magnitude of velocity
+           if Player.max_velocity_squared < (vx * vx + vy * vy):
+                vx *= 0.8
+                vy *= 0.8
         
-        self.motion_vector = (vx, vy)
-        self.is_thrusting = True
+           self.motion_vector = (vx, vy)
+           self.is_thrusting = True
 
     def raiseShields(self):
       """ """
