@@ -1,28 +1,54 @@
 import CommonLayers
-import GameServer
 import cocos
 from cocos.scenes.transitions import FadeTRTransition
 import pyglet
 import sys
-import GameClient                       # Added for multi-player
 
 
-class Game(object):
+class GameController(object):
+   """
+   """
+   default_title = "Cocosoids"
+   default_window_width = 1366
+   default_window_height = 700
+   playLayerClass = CommonLayers.PlayLayer
+   
+   def __init__(self):
+       """ """
+       super( GameController, self ).__init__()
+       
+       self.game_layer = self.playLayerClass()
+       self.game_layer.addAsteroids(3)
+       self.ui_layer = CommonLayers.UILayer()
+       self.ui_layer.add(self.game_layer)
+       
+       self.game_scene = cocos.scene.Scene(self.ui_layer)
+
+   def start(self):
+       """ """
+       cocos.director.director.replace(FadeTRTransition(
+           self.get_scene(), 2))
+       self.game_layer.do(CommonLayers.PlayLayerAction())
+       self.game_layer.do(CommonLayers.InteractivePlayLayerAction())
+       self.game_layer.addPlayer(CommonLayers.PlayLayer.ownID)
+
+   def get_scene(self):
+       """ """
+       return self.game_scene
+
+
+class IntroController(object):
     """
     """
     
-    default_title = "Cocosoids"
-    default_window_width = 1366
-    default_window_height = 700
-
     def __init__(self):
         """ """
-        super( Game, self ).__init__()
+        super( IntroController, self ).__init__()
 
-        director_width = Game.default_window_width
-        director_height = Game.default_window_height
+        director_width = GameController.default_window_width
+        director_height = GameController.default_window_height
 
-        caption = Game.default_title + ' ' + \
+        caption = GameController.default_title + ' ' + \
             CommonLayers.PlayLayer.ownID
         window = cocos.director.director.init(
             director_width, director_height,
@@ -48,17 +74,17 @@ class Game(object):
 
     def on_join_game( self ):
         """ """
-        gameInstance = GameClient.GameClient()   # Changed for multi-player
-        cocos.director.director.replace(FadeTRTransition(
-            gameInstance.get_scene(), 2))
-        gameInstance.start(self.host, self.port) # Changed for multi-player
+        ##################################################################
+        # NEW TO SUPPORT MULTIPLAYER
+        gameController = ClientGameController()
+        gameController.start(self.host, self.port)
+        # End NEW TO SUPPORT MULTIPLAYER
+        ##################################################################
 
     def on_host_game( self ):
         """ """
-        gameInstance = GameServer.GameServer()
-        cocos.director.director.replace(FadeTRTransition(
-            gameInstance.get_scene(), 2))
-        gameInstance.start()
+        gameController = ServerGameController() # TO SUPPORT MULTIPLAYER
+        gameController.start()
 
     def on_name( self, value ):
         """ """
@@ -89,24 +115,57 @@ class IntroMenu(cocos.menu.Menu):
             'color': (255, 255, 255, 255),
         }
 
-        l = []
-        l.append( cocos.menu.MenuItem('Join Game',
+        menuItems = []
+        menuItems.append( cocos.menu.MenuItem('Join Game',
             self.game.on_join_game ) )
-        l.append( cocos.menu.MenuItem('Host Game',
+        menuItems.append( cocos.menu.MenuItem('Host Game',
             self.game.on_host_game ) )
-        l.append( cocos.menu.EntryMenuItem('Name:',
+        menuItems.append( cocos.menu.EntryMenuItem('Name:',
             self.game.on_name,
             CommonLayers.PlayLayer.ownID) )
-        l.append( cocos.menu.MenuItem('Quit', self.game.on_quit ) )
+        menuItems.append( cocos.menu.MenuItem('Quit', self.game.on_quit ) )
 
-        self.create_menu( l )
+        self.create_menu( menuItems )
+
+##################################################################
+# NEW TO SUPPORT MULTIPLAYER
+import GameChatServer
+import GameChatClient
+
+class ServerGameController(GameController):
+   """
+   """
+   def start(self):
+      """ """
+      cocos.director.director.replace(FadeTRTransition(
+          self.get_scene(), 2))
+      self.game_layer.do(GameChatServer.GameChatServerNetworkAction())
+      self.game_layer.do(CommonLayers.PlayLayerAction())
+
+
+class ClientGameController(GameController):
+   """
+   """
+   playLayerClass = GameChatClient.ClientPlayLayer
+
+   def start(self, host, port):
+      """ """
+      cocos.director.director.replace(FadeTRTransition(
+          self.get_scene(), 2))
+      self.game_layer.do(GameChatClient.GameChatClientNetworkAction(
+           host, port))
+      self.game_layer.do(CommonLayers.InteractivePlayLayerAction())
+      self.game_layer.addPlayer(CommonLayers.PlayLayer.ownID)
+# End NEW TO SUPPORT MULTIPLAYER
+##################################################################
+
 
 
 if __name__ == "__main__":
-    game = Game()
+    controller = IntroController()
     if len(sys.argv) == 2:
         host, port = sys.argv[1].split(":")
         print(host, port)
-        game.run(host, int(port))
+        controller.run(host, int(port))
     else:
-        game.run()
+        controller.run()

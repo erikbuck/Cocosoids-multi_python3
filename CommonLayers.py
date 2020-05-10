@@ -1,3 +1,5 @@
+from GameSprite import GameSprite
+from KeyboardInputLayer import KeyboardInputLayer
 import cocos
 import pyglet
 import random
@@ -37,30 +39,6 @@ class UILayer(cocos.layer.Layer):
             UILayer.lives_remaining_legend + str(number)
 
 
-class KeyboardInputLayer(cocos.layer.Layer):
-    """ 
-    """
-    
-    # You need to tell cocos that your layer is for handling input!
-    # This is key (no pun intended)!
-    # If you don't include this you'll be scratching your head wondering why your game isn't accepting input
-    is_event_handler = True
-
-    def __init__(self):
-        """ """
-        super(KeyboardInputLayer, self).__init__()
-        self.keys_being_pressed = set()
-
-    def on_key_press(self, key, modifiers):
-        """ """
-        self.keys_being_pressed.add(key)
-
-    def on_key_release(self, key, modifiers):
-        """ """
-        if key in self.keys_being_pressed:
-            self.keys_being_pressed.remove(key)
-
-
 class PlayLayer(KeyboardInputLayer):
     """
     """
@@ -82,12 +60,33 @@ class PlayLayer(KeyboardInputLayer):
         backgroundSprite.scale_x = width / backgroundSprite.width
         backgroundSprite.scale_y = height / backgroundSprite.height
         self.add(backgroundSprite, z=-1)
+        
+        # Delete all existing asteroids
+        asteroids = GameSprite.getInstances(Asteroid)
+        for asteroid in asteroids:
+            asteroid.markForDeath()
+        
+        self.isWaitingToSpawnAsteroids = True
 
+    def getInfo(self):
+        """ """
+        return [x.getInfo() for x in
+            GameSprite.live_instances.values()]
+            
     def updateLivesRemaining(self, number):
         """ """
         ui_layer = self.get_ancestor(UILayer)
         if ui_layer:
             ui_layer.updateLivesRemaining(number)
+    
+    def spawnAsteroids(self):
+        """ """
+        if not self.isWaitingToSpawnAsteroids:
+            asteroids = GameSprite.getInstances(Asteroid)
+            if 0 == len(asteroids):
+                self.isWaitingToSpawnAsteroids = True
+                self.do(cocos.actions.Delay(5) + \
+                    cocos.actions.CallFuncS(PlayLayer.addAsteroids))
     
     def addExplosion(self, position):
         """ """
@@ -102,6 +101,7 @@ class PlayLayer(KeyboardInputLayer):
             new_asteroid = Asteroid()
             self.batch.add(new_asteroid)
             new_asteroid.start()
+        self.isWaitingToSpawnAsteroids = False
 
     def addPlayer(self, player_id):
         """ """
@@ -127,9 +127,9 @@ class PlayLayer(KeyboardInputLayer):
     def fireBulletForPlayer(self, player_id):
         """ """
         if player_id in self.players:
-            # Don't shoot if not in the game at the moment
+            # Don't shoot if not in teh game at the moment
             player = self.players[player_id]
-            if (not player.shouldDie) and (not player.is_shielded):
+            if not player.shouldDie:
                 dx, dy = player.getHeadingVector()
                 x, y = player.position
                 x += dx * player.radius * 1.5 # Move bullet out of ship
@@ -168,168 +168,48 @@ class PlayLayer(KeyboardInputLayer):
          player.dropShields()
 
 
-class GameSpriteAction(cocos.actions.Action):
-    """ 
-    This class exists to forward the step(dt) method call to the 
-    receiver's target object. It is a hook that enables targets to
-    perform logic each time the display is updated.
+class PlayLayerAction(cocos.actions.Action):
     """
-    
+    """
     def step(self, dt):
         """ """
-        self.target.step(dt)
+        GameSprite.handleCollisions()
+        self.target.spawnAsteroids()
 
 
-class GameSprite(cocos.sprite.Sprite):
+class InteractivePlayLayerAction(cocos.actions.Action):
     """
-    This class exists to provide several features shared by almost
-    every game object.
-    
-    Each instance has the following:
-    A unique identifier
-    A motion vector to describe how the instances should move.
-    A radius used to detect collisions with other GameSprite 
-        instances
-    A flag, shouldDie, used to signal when the instance should be
-    removed from the game.
-    
-    Instances automatically move according to each instance's
-    motion vector. Positions "wrap" meaning that if an instance moves 
-    off the screen, it reappears on the opposite side of the screen.
     """
-    next_unique_id = 1
-    live_instances = {} # map unique_id to instance with that id
-
-    @staticmethod
-    def handleCollisions():
-        """ """
-        objects = GameSprite.live_instances.values()
-        opjectsCopy = list(objects)
-        for object in opjectsCopy:
-            for other_object in opjectsCopy:
-                if other_object.id != object.id and \
-                        object.isHitByCircle(other_object.position,\
-                        other_object.radius):
-                    object.onCollision(other_object)
-    @staticmethod
-    def getInstances(klass):
-        """ """
-        result = []
-        for object in GameSprite.live_instances.values():
-            if isinstance(object, klass):
-                result.append(object)
-        return result
-
-    def __init__(self, image, id=None, position=(0, 0), rotation=0,
-            scale=1, opacity = 255, color=(255, 255, 255),
-            anchor=None):
-        """ """
-        super( GameSprite, self ).__init__( image, position, rotation,
-            scale, opacity, color, anchor)
-        if not id:
-            self.id = GameSprite.next_unique_id
-        else:
-            self.id = id
-        
-        GameSprite.next_unique_id += 1
-        self.motion_vector = (0,0)  # No motion by default
-        self.radius = 3             # Small default radius
-        self.shouldDie = False
-        self.type = '_'
-        GameSprite.live_instances[self.id] = self
-
+    
+    def handleLocalKeyboard(self):
+      """ """
+      if pyglet.window.key.LEFT in self.target.keys_being_pressed:
+         self.target.rotatePlayer(PlayLayer.ownID, -5)
+         
+      if pyglet.window.key.RIGHT in self.target.keys_being_pressed:
+         self.target.rotatePlayer(PlayLayer.ownID, 5)
+         
+      if pyglet.window.key.UP in self.target.keys_being_pressed:
+         self.target.thrustPlayer(PlayLayer.ownID)
+         
+      if pyglet.window.key.SPACE in self.target.keys_being_pressed:
+         if not self.isSpaceKeyDown:
+            self.target.fireBulletForPlayer(PlayLayer.ownID)
+            self.isSpaceKeyDown = True
+      else:
+         self.isSpaceKeyDown = False
+          
+      if pyglet.window.key._1 in self.target.keys_being_pressed:
+         self.target.shieldPlayer(PlayLayer.ownID)
+      else:
+         self.target.unshieldPlayer(PlayLayer.ownID)
+ 
     def start(self):
-        """ """
-        self.do(GameSpriteAction())
-        
-    def getInfo(self):
-        """ """
-        x, y = self.position
-        rot_deg = self.rotation
-        return {'id':self.id,
-            'type':self.type,
-            'pos':(int(x), int(y)),
-            'rot_deg': int(rot_deg),
-            'shouldDie' : self.shouldDie }
-    
-    def updateWithInfo(self, info):
-        """ """
-        self.position = info['pos']
-        self.rotation = info['rot_deg']
-        self.shouldDie = info['shouldDie']
-    
-    def getVelocityMultiplier(self):
-        """ Return a multiplier for use when calculating motion per
-            unit time.
-        """
-        return 1
-    
-    def setRandomPosition(self):
-        width, height = cocos.director.director.get_window_size()
-        self.position = (random.random() * width,
-            random.random() * height)
-    
-    def markForDeath(self):
-        """ """
-        self.shouldDie = True
-    
-    def isHitByCircle(self, center, radius):
-        """ Returns True if and only if the receiver's circle 
-            calculated using the receiver's position and radius 
-            overlaps the circle calculated using the center and radius 
-            arguments to this method. 
-        """
-        total_radius = self.radius + radius
-        total_radius_squared = total_radius * total_radius
-        x, y = self.position
-        delta_x = center[0] - x
-        delta_y = center[1] - y
-        distance_squared = delta_x * delta_x + delta_y * delta_y
-        
-        return distance_squared < total_radius_squared
-
-    def processCollision(self, other_object):
-        """ """
-        playLayer = self.get_ancestor(PlayLayer)
-        if playLayer:
-            playLayer.addExplosion(self.position)
-        return True
-    
-    def onRespawn(self):
-        """ Adds the receiver back into collision detection set after
-            receiver has respawned """
-        GameSprite.live_instances[self.id] = self
-        self.do(GameSpriteAction())
-    
-    def onCollision(self, other_object):
-        """ """
-        if self.processCollision(other_object):
-            self.markForDeath()
+        self.isSpaceKeyDown = False
 
     def step(self, dt):
-        """ Perform any updates that should occur after dt seconds 
-            from the last update.
-        """
-        if self.shouldDie:
-            self.stop()
-            self.kill()
-                
-            if self.id in GameSprite.live_instances:
-                del GameSprite.live_instances[self.id];
-        else:
-            width, height = cocos.director.director.get_window_size()
-            dx = self.motion_vector[0] * self.getVelocityMultiplier()
-            dy = self.motion_vector[1] * self.getVelocityMultiplier()
-            x = self.position[0] + dx * dt
-            y = self.position[1] + dy * dt
-            
-            if x < 0: x += width
-            elif x > width: x -= width
-            
-            if y < 0: y += height
-            elif y > height: y -= height
-            
-            self.position = (x, y)
+        """ """
+        self.handleLocalKeyboard()
 
 
 class Asteroid(GameSprite):
@@ -376,8 +256,9 @@ class Asteroid(GameSprite):
             with other asteroids. """
         result = not isinstance(other_object, Asteroid)
         if result:
-            # Let inherited behavior rule the day
-            super( Asteroid, self ).processCollision(other_object)
+            playLayer = self.get_ancestor(PlayLayer)
+            if playLayer:
+                playLayer.addExplosion(self.position)
 
         return result
 
@@ -436,19 +317,18 @@ class Player(GameSprite):
    
     def thrust(self):
         """ """
-        if not self.is_shielded:
-           dx, dy = self.getHeadingVector()
-           vx, vy = self.motion_vector
-           vx += dx
-           vy += dy
+        dx, dy = self.getHeadingVector()
+        vx, vy = self.motion_vector
+        vx += dx
+        vy += dy
         
-           # Limit magnitude of velocity
-           if Player.max_velocity_squared < (vx * vx + vy * vy):
-                vx *= 0.8
-                vy *= 0.8
+        # Limit magnitude of velocity
+        if Player.max_velocity_squared < (vx * vx + vy * vy):
+             vx *= 0.8
+             vy *= 0.8
         
-           self.motion_vector = (vx, vy)
-           self.is_thrusting = True
+        self.motion_vector = (vx, vy)
+        self.is_thrusting = True
 
     def raiseShields(self):
       """ """
@@ -502,12 +382,10 @@ class Player(GameSprite):
       if 0 <= self.lives_remaining:
          playLayer = self.get_ancestor(PlayLayer)
          if playLayer:
-            playLayer.do(cocos.actions.Delay(5) + \
-               cocos.actions.CallFuncS(\
+            playLayer.do(cocos.actions.Delay(5) + cocos.actions.CallFuncS(\
                PlayLayer.addPlayer, self.player_id))
-
-      return super( Player, self ).processCollision(other_object)
-
+            playLayer.addExplosion(self.position)
+      return True
 
 
 class Bullet(GameSprite):
@@ -537,8 +415,8 @@ class Bullet(GameSprite):
         return Bullet.speed
     
     def processCollision(self, other_object):
-        """ Overrides inherited version to prevent bullet collisions
-            with other bullets and prevent bullets from exploding. """
+        """ Overrides inherited version to ignore bullet collisions
+            with other bullets. """
         return not isinstance(other_object, Bullet)
 
 
@@ -569,11 +447,6 @@ class Explosion(GameSprite):
         self.type = 'e'
         self.do(cocos.actions.Delay(Explosion.duration) + \
             cocos.actions.CallFuncS(Explosion.markForDeath))
-
-    def processCollision(self, other_object):
-        """ Overrides inherited version to prevent collisions
-            with anything. """
-        return False
 
 
 if __name__ == "__main__":
